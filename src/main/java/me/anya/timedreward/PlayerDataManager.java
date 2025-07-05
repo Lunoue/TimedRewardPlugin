@@ -1,79 +1,55 @@
 package me.anya.timedreward;
 
-import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
-import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.EventHandler;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.HashMap;
 import java.util.UUID;
 
-public class PlayerDataManager implements Listener {
-    private final File dataFile;
-    private final YamlConfiguration dataConfig;
-    private final HashMap<UUID, Long> joinTimestamps = new HashMap<>();
+public class RewardTask implements Runnable {
+    private final PlayerDataManager dataManager;
+    private final TimedReward plugin;
 
-    public PlayerDataManager(TimedReward plugin) {
-        dataFile = new File(plugin.getDataFolder(), "data.yml");
-        if (!dataFile.exists()) {
-            try {
-                dataFile.createNewFile();
-            } catch (IOException e) {
-                e.printStackTrace();
+    public RewardTask(PlayerDataManager dataManager, TimedReward plugin) {
+        this.dataManager = dataManager;
+        this.plugin = plugin;
+    }
+
+    @Override
+    public void run() {
+        long intervalSeconds = plugin.getConfig().getLong("reward.interval-seconds");
+        int amount = plugin.getConfig().getInt("reward.amount");
+        String message = plugin.getConfig().getString("reward.message");
+
+        long currentTime = System.currentTimeMillis();
+
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            UUID uuid = player.getUniqueId();
+
+            // Получаем время последней проверки (или время входа)
+            long lastCheck = dataManager.getJoinTimestamps().getOrDefault(uuid, currentTime);
+
+            long elapsedMillis = currentTime - lastCheck;
+            long elapsedSeconds = elapsedMillis / 1000;
+
+            if (elapsedSeconds <= 0) continue;
+
+            // Обновляем время последней проверки для игрока
+            dataManager.getJoinTimestamps().put(uuid, currentTime);
+
+            // Получаем уже накопленное время
+            long totalPlayTime = dataManager.getPlayTime(uuid) + elapsedSeconds;
+
+            if (totalPlayTime >= intervalSeconds) {
+                // Выдаём награду
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "eco give " + player.getName() + " " + amount);
+                player.sendMessage(message);
+
+                // Сбрасываем накопленное время
+                dataManager.resetPlayTime(uuid);
+            } else {
+                // Сохраняем накопленное время
+                dataManager.setPlayTime(uuid, totalPlayTime);
             }
         }
-        dataConfig = YamlConfiguration.loadConfiguration(dataFile);
-    }
-
-    @EventHandler
-    public void onJoin(PlayerJoinEvent event) {
-        joinTimestamps.put(event.getPlayer().getUniqueId(), System.currentTimeMillis());
-    }
-
-    @EventHandler
-    public void onQuit(PlayerQuitEvent event) {
-        UUID uuid = event.getPlayer().getUniqueId();
-        long joined = joinTimestamps.getOrDefault(uuid, System.currentTimeMillis());
-        long played = (System.currentTimeMillis() - joined) / 1000;
-        long total = dataConfig.getLong(uuid.toString(), 0) + played;
-        dataConfig.set(uuid.toString(), total);
-        saveData();
-        joinTimestamps.remove(uuid);
-    }
-
-    public void addPlayTime(UUID uuid, long seconds) {
-        long current = dataConfig.getLong(uuid.toString(), 0);
-        dataConfig.set(uuid.toString(), current + seconds);
-        saveData();
-    }
-
-    public long getPlayTime(UUID uuid) {
-        return dataConfig.getLong(uuid.toString(), 0);
-    }
-
-    public void resetPlayTime(UUID uuid) {
-        dataConfig.set(uuid.toString(), 0);
-        saveData();
-    }
-
-    private void saveData() {
-        try {
-            dataConfig.save(dataFile);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public HashMap<UUID, Long> getJoinTimestamps() {
-        return joinTimestamps;
-    }
-
-    public void setPlayTime(UUID uuid, long seconds) {
-        dataConfig.set(uuid.toString(), seconds);
-        saveData();
     }
 }
