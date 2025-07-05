@@ -3,15 +3,11 @@ package me.anya.timedreward;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
-import java.util.HashMap;
 import java.util.UUID;
 
 public class RewardTask implements Runnable {
     private final PlayerDataManager dataManager;
     private final TimedReward plugin;
-
-    // Сохраняем время последней проверки для каждого игрока (в миллисекундах)
-    private final HashMap<UUID, Long> lastCheckTimestamps = new HashMap<>();
 
     public RewardTask(PlayerDataManager dataManager, TimedReward plugin) {
         this.dataManager = dataManager;
@@ -29,19 +25,18 @@ public class RewardTask implements Runnable {
         for (Player player : Bukkit.getOnlinePlayers()) {
             UUID uuid = player.getUniqueId();
 
-            // Время последней проверки, если не было — считаем что только что
-            long lastTime = lastCheckTimestamps.getOrDefault(uuid, currentTime);
+            // Получаем время последней проверки (или время входа)
+            long lastCheck = dataManager.getJoinTimestamps().getOrDefault(uuid, currentTime);
 
-            // Сколько миллисекунд прошло с прошлого тика
-            long elapsedMillis = currentTime - lastTime;
+            long elapsedMillis = currentTime - lastCheck;
             long elapsedSeconds = elapsedMillis / 1000;
 
             if (elapsedSeconds <= 0) continue;
 
-            // Обновляем "время последней проверки"
-            lastCheckTimestamps.put(uuid, currentTime);
+            // Обновляем время последней проверки для игрока
+            dataManager.getJoinTimestamps().put(uuid, currentTime);
 
-            // Прибавим к накопленному
+            // Получаем уже накопленное время
             long totalPlayTime = dataManager.getPlayTime(uuid) + elapsedSeconds;
 
             if (totalPlayTime >= intervalSeconds) {
@@ -49,9 +44,10 @@ public class RewardTask implements Runnable {
                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "eco give " + player.getName() + " " + amount);
                 player.sendMessage(message);
 
-                // Обнуляем
+                // Сбрасываем накопленное время
                 dataManager.resetPlayTime(uuid);
             } else {
+                // Сохраняем накопленное время
                 dataManager.setPlayTime(uuid, totalPlayTime);
             }
         }
