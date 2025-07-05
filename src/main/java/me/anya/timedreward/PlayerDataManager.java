@@ -71,4 +71,9 @@ public class PlayerDataManager implements Listener {
     public HashMap<UUID, Long> getJoinTimestamps() {
         return joinTimestamps;
     }
+
+    public void setPlayTime(UUID uuid, long seconds) {
+        dataConfig.set(uuid.toString(), seconds);
+        saveData();
+    }
 }
