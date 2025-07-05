@@ -3,9 +3,15 @@ package me.anya.timedreward;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
+import java.util.HashMap;
+import java.util.UUID;
+
 public class RewardTask implements Runnable {
     private final PlayerDataManager dataManager;
     private final TimedReward plugin;
+
+    // Временная карта для хранения текущей сессии
+    private final HashMap<UUID, Long> accumulatedSeconds = new HashMap<>();
 
     public RewardTask(PlayerDataManager dataManager, TimedReward plugin) {
         this.dataManager = dataManager;
@@ -19,16 +25,29 @@ public class RewardTask implements Runnable {
         String message = plugin.getConfig().getString("reward.message");
 
         for (Player player : Bukkit.getOnlinePlayers()) {
-            long joined = dataManager.getJoinTimestamps().getOrDefault(player.getUniqueId(), System.currentTimeMillis());
-            long sessionTime = (System.currentTimeMillis() - joined) / 1000;
-            dataManager.addPlayTime(player.getUniqueId(), sessionTime);
-            dataManager.getJoinTimestamps().put(player.getUniqueId(), System.currentTimeMillis());
+            UUID uuid = player.getUniqueId();
 
-            long totalTime = dataManager.getPlayTime(player.getUniqueId());
+            // Сколько секунд прошло с прошлого тика
+            long secondsSinceLastTick = 60;
+
+            // Добавим к уже накопленным в current-сессии
+            long sessionSeconds = accumulatedSeconds.getOrDefault(uuid, 0L) + secondsSinceLastTick;
+
+            // Добавим к уже сохранённым (предыдущим)
+            long totalTime = dataManager.getPlayTime(uuid) + sessionSeconds;
+
             if (totalTime >= interval) {
+                // Выдаём награду
                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "eco give " + player.getName() + " " + amount);
                 player.sendMessage(message);
-                dataManager.resetPlayTime(player.getUniqueId());
+
+                // Обнуляем весь прогресс
+                accumulatedSeconds.put(uuid, 0L);
+                dataManager.resetPlayTime(uuid);
+            } else {
+                // Сохраняем в текущую сессию и в data.yml
+                accumulatedSeconds.put(uuid, sessionSeconds);
+                dataManager.setPlayTime(uuid, totalTime); // добавим метод ниже
             }
         }
     }
