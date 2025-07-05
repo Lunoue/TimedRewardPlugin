@@ -10,8 +10,8 @@ public class RewardTask implements Runnable {
     private final PlayerDataManager dataManager;
     private final TimedReward plugin;
 
-    // Временная карта для хранения текущей сессии
-    private final HashMap<UUID, Long> accumulatedSeconds = new HashMap<>();
+    // Сохраняем время последней проверки для каждого игрока (в миллисекундах)
+    private final HashMap<UUID, Long> lastCheckTimestamps = new HashMap<>();
 
     public RewardTask(PlayerDataManager dataManager, TimedReward plugin) {
         this.dataManager = dataManager;
@@ -20,34 +20,39 @@ public class RewardTask implements Runnable {
 
     @Override
     public void run() {
-        long interval = plugin.getConfig().getLong("reward.interval-seconds");
+        long intervalSeconds = plugin.getConfig().getLong("reward.interval-seconds");
         int amount = plugin.getConfig().getInt("reward.amount");
         String message = plugin.getConfig().getString("reward.message");
+
+        long currentTime = System.currentTimeMillis();
 
         for (Player player : Bukkit.getOnlinePlayers()) {
             UUID uuid = player.getUniqueId();
 
-            // Сколько секунд прошло с прошлого тика
-            long secondsSinceLastTick = 60;
+            // Время последней проверки, если не было — считаем что только что
+            long lastTime = lastCheckTimestamps.getOrDefault(uuid, currentTime);
 
-            // Добавим к уже накопленным в current-сессии
-            long sessionSeconds = accumulatedSeconds.getOrDefault(uuid, 0L) + secondsSinceLastTick;
+            // Сколько миллисекунд прошло с прошлого тика
+            long elapsedMillis = currentTime - lastTime;
+            long elapsedSeconds = elapsedMillis / 1000;
 
-            // Добавим к уже сохранённым (предыдущим)
-            long totalTime = dataManager.getPlayTime(uuid) + sessionSeconds;
+            if (elapsedSeconds <= 0) continue;
 
-            if (totalTime >= interval) {
+            // Обновляем "время последней проверки"
+            lastCheckTimestamps.put(uuid, currentTime);
+
+            // Прибавим к накопленному
+            long totalPlayTime = dataManager.getPlayTime(uuid) + elapsedSeconds;
+
+            if (totalPlayTime >= intervalSeconds) {
                 // Выдаём награду
                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "eco give " + player.getName() + " " + amount);
                 player.sendMessage(message);
 
-                // Обнуляем весь прогресс
-                accumulatedSeconds.put(uuid, 0L);
+                // Обнуляем
                 dataManager.resetPlayTime(uuid);
             } else {
-                // Сохраняем в текущую сессию и в data.yml
-                accumulatedSeconds.put(uuid, sessionSeconds);
-                dataManager.setPlayTime(uuid, totalTime); // добавим метод ниже
+                dataManager.setPlayTime(uuid, totalPlayTime);
             }
         }
     }
