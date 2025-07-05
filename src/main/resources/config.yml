@@ -1,0 +1,4 @@
+reward:
+  interval-seconds: 14400 # 4 часа
+  amount: 400
+  message: "§6[TimedReward] §aВы получили 400 монет за 4 часа игры!"
